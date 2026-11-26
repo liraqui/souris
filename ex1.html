@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ballons Éclair</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Mise en page : un écran de jeu unique, bandeau de score en haut, terrain plein écran dessous.
+   Look volontairement unique : nuit d'encre bleue, ballons saturés. */
+:root {
+  --bg: #0d1523;
+  --panel: #142036;
+  --line: #243553;
+  --fg: #eef3fb;
+  --muted: #8fa3c2;
+  --accent: #ffb938;
+  --danger: #ff6b57;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-display);
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+.stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lab {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.val {
+  font-size: clamp(26px, 8vw, 38px);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+#timeStat.urgent .val { color: var(--danger); }
+.bump { animation: bump .22s ease-out; }
+@keyframes bump { 40% { transform: scale(1.18); color: var(--accent); } }
+
+button { font: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.ghost {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ghost[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background-color: var(--panel);
+  background-image: radial-gradient(var(--line) 1px, transparent 1.6px);
+  background-size: 28px 28px;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---- Ballons ---- */
+.balloon {
+  position: absolute;
+  width: 1em;
+  height: 1.2em;
+  border-radius: 50% 50% 48% 48% / 56% 56% 44% 44%;
+  background:
+    radial-gradient(circle at 30% 26%, rgba(255,255,255,.7) 0 5%, rgba(255,255,255,0) 20%),
+    var(--c);
+  box-shadow: inset -.1em -.14em 0 rgba(0,0,0,.17);
+  cursor: pointer;
+  touch-action: manipulation;
+  transform-origin: 50% 100%;
+  animation: inflate .18s cubic-bezier(.3,1.7,.5,1) both, sway 2.2s ease-in-out .2s infinite alternate, shrink var(--life, 2s) linear forwards;
+}
+.balloon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -.07em;
+  width: .13em;
+  height: .1em;
+  transform: translateX(-50%);
+  background: var(--c);
+  filter: brightness(.82);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.balloon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: .55em;
+  margin-top: .02em;
+  background: rgba(238,243,251,.32);
+  transform: translateX(-50%);
+}
+.balloon.gone { pointer-events: none; scale: .3; animation: deflate .26s ease-in forwards; }
+.balloon.static { position: relative; animation: none; cursor: default; }
+@keyframes inflate { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes sway { from { rotate: -4deg; } to { rotate: 4deg; } }
+@keyframes shrink { from { scale: 1; } to { scale: .3; } }
+@keyframes deflate { to { transform: scale(.2) translateY(-.4em); opacity: 0; } }
+
+.burst { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 3; }
+.burst i {
+  position: absolute; left: -4px; top: -4px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--c);
+  animation: fly .5s cubic-bezier(.2,.7,.3,1) forwards;
+}
+.burst b {
+  position: absolute; left: 0; top: 0; width: 20px; height: 20px;
+  border-radius: 50%; border: 2px solid var(--c);
+  animation: ring .38s ease-out forwards;
+}
+@keyframes fly { to { transform: translate(var(--dx), var(--dy)) scale(.2); opacity: 0; } }
+@keyframes ring {
+  from { transform: translate(-50%, -50%) scale(.6); opacity: .9; }
+  to { transform: translate(-50%, -50%) scale(var(--rs)); opacity: 0; }
+}
+.pts {
+  position: absolute; z-index: 4; pointer-events: none;
+  font-family: var(--font-mono); font-weight: 500; font-size: 20px;
+  color: var(--accent);
+  transform: translate(-50%, -50%);
+  animation: rise .8s ease-out forwards;
+  text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+@keyframes rise { to { transform: translate(-50%, -190%); opacity: 0; } }
+
+/* ---- Écrans d'intro et de fin ---- */
+.overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(13,21,35,.86);
+  overflow: auto;
+}
+.card { width: min(100%, 440px); display: flex; flex-direction: column; gap: 16px; }
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono); font-size: 12px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--accent);
+}
+h1 {
+  margin: 0;
+  font-size: clamp(40px, 11vw, 60px);
+  line-height: .95; font-weight: 800; letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.lead { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.5; max-width: 38ch; }
+.legend { display: flex; align-items: flex-end; gap: 22px; padding: 8px 0 4px; }
+.legend figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.legend .balloon { margin-bottom: .7em; }
+.legend figcaption { font-family: var(--font-mono); font-size: 13px; color: var(--fg); white-space: nowrap; }
+.play {
+  align-self: flex-start;
+  min-height: 52px; padding: 0 30px;
+  border: 0; border-radius: 14px;
+  background: var(--accent); color: #1a1405;
+  font-size: 20px; font-weight: 800;
+  transition: transform .1s;
+}
+.play:active { transform: scale(.96); }
+.big { font-size: clamp(72px, 24vw, 116px); font-weight: 800; line-height: .9; font-variant-numeric: tabular-nums; }
+.record { margin: 0; font-family: var(--font-mono); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
+.results div { display: flex; flex-direction: column; gap: 2px; }
+.results dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.results dd { margin: 0; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .balloon { animation: shrink var(--life, 2s) linear forwards; }
+  .bump { animation: none; }
+}
+</style>
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+
+<header class="hud">
+  <div class="stat"><span class="lab">Score</span><span class="val" id="score">0</span></div>
+  <div class="stat" id="timeStat"><span class="lab">Temps</span><span class="val" id="time">30.0</span></div>
+  <div class="stat"><span class="lab">Record</span><span class="val" id="best">0</span></div>
+  <button class="ghost" id="sound" type="button" aria-pressed="true">Son</button>
+</header>
+
+<main class="stage" id="stage">
+  <section class="overlay" id="startOv">
+    <div class="card">
+      <p class="eyebrow">Jeu de réflexes · 30 secondes</p>
+      <h1>Ballons Éclair</h1>
+      <p class="lead">Des ballons apparaissent au hasard et disparaissent vite. Éclate-les avant qu'ils se dégonflent.</p>
+      <div class="legend" aria-label="Points selon la taille">
+        <figure><div class="balloon static" style="--c:#4cc3ff;font-size:30px"></div><figcaption>petit +40</figcaption></figure>
+        <figure><div class="balloon static" style="--c:#3ddc97;font-size:50px"></div><figcaption>moyen +28</figcaption></figure>
+        <figure><div class="balloon static" style="--c:#ff6b57;font-size:74px"></div><figcaption>grand +12</figcaption></figure>
+      </div>
+      <p class="lead">Jusqu'à 10 points de bonus si tu cliques tout de suite.</p>
+      <p id="goalLine"></p>
+      <button class="play" id="playBtn" type="button">Jouer</button>
+      <a class="pg-link" href="index.html" style="align-self:flex-start">← Liste des exercices</a>
+    </div>
+  </section>
+
+  <section class="overlay" id="endOv" hidden>
+    <div class="card">
+      <p class="eyebrow">Temps écoulé</p>
+      <div class="big" id="finalScore">0</div>
+      <p class="record" id="recordMsg" hidden>Nouveau record</p>
+      <dl class="results">
+        <div><dt>Éclatés</dt><dd id="rHits">0</dd></div>
+        <div><dt>Ratés</dt><dd id="rMiss">0</dd></div>
+        <div><dt>Précision</dt><dd id="rAcc">0%</dd></div>
+      </dl>
+      <div id="pgResult"></div>
+      <button class="play" id="againBtn" type="button">Rejouer</button>
+    </div>
+  </section>
+</main>
+
+<script src="progress.js"></script>
+<script>
+(function () {
+  var DURATION = 30000;
+  var COLORS = ['#ff6b57', '#ffb938', '#3ddc97', '#4cc3ff', '#b79cff', '#ff7eb6'];
+  var BEST_KEY = 'ballons-eclair-best';
+  var $ = function (id) { return document.getElementById(id); };
+
+  var stage = $('stage'), scoreEl = $('score'), timeEl = $('time'), bestEl = $('best');
+  var timeStat = $('timeStat'), startOv = $('startOv'), endOv = $('endOv');
+  var soundBtn = $('sound');
+
+  var best = 0;
+  try { best = parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) {}
+  bestEl.textContent = best;
+
+  var st = { running: false, score: 0, hits: 0, missed: 0, start: 0, balloons: [], spawnT: 0, tickT: 0 };
+
+  /* ---- Son ---- */
+  var ac = null, soundOn = true;
+  function initAudio() {
+    if (!ac) {
+      try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; }
+    }
+    if (ac && ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
+  }
+  function pop() {
+    if (!soundOn || !ac) return;
+    try {
+      var t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(620 + Math.random() * 180, t);
+      o.frequency.exponentialRampToValueAtTime(140, t + 0.09);
+      g.gain.setValueAtTime(0.18, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + 0.11);
+    } catch (e) {}
+  }
+  soundBtn.addEventListener('click', function () {
+    soundOn = !soundOn;
+    soundBtn.setAttribute('aria-pressed', String(soundOn));
+  });
+
+  /* ---- Utilitaires ---- */
+  function bumpEl(el) {
+    el.classList.remove('bump');
+    void el.offsetWidth;
+    el.classList.add('bump');
+  }
+  function overlaps(x, y, w, h) {
+    for (var i = 0; i < st.balloons.length; i++) {
+      var b = st.balloons[i]._b;
+      if (x < b.x + b.w + 8 && x + w + 8 > b.x && y < b.y + b.h + 8 && y + h + 8 > b.y) return true;
+    }
+    return false;
+  }
+  function removeFrom(el) {
+    var i = st.balloons.indexOf(el);
+    if (i > -1) st.balloons.splice(i, 1);
+    clearTimeout(el._b.goneT);
+  }
+
+  /* ---- Création d'un ballon ---- */
+  function makeBalloon(p) {
+    var W = stage.clientWidth, H = stage.clientHeight;
+    var f = Math.min(1, Math.max(0.8, Math.min(W, H) / 560));
+    var r = Math.random(), base;
+    if (r < 0.35) base = 36 + Math.random() * 18;        /* petit */
+    else if (r < 0.75) base = 58 + Math.random() * 24;   /* moyen */
+    else base = 88 + Math.random() * 28;                 /* grand */
+    var w = base * f, h = w * 1.2;
+    var pts = Math.round(10 + (116 - base) * 0.4);
+    var life = (2900 - 700 * p) * (0.85 + Math.random() * 0.3);
+
+    var roomX = Math.max(0, W - w - 12), roomY = Math.max(0, H - h - (w * 0.55 + 12));
+    var x, y, tries = 0;
+    do {
+      x = 6 + Math.random() * roomX;
+      y = 6 + Math.random() * roomY;
+      tries++;
+    } while (tries < 14 && overlaps(x, y, w, h));
+
+    var color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    var el = document.createElement('div');
+    el.className = 'balloon live';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.fontSize = w + 'px';
+    el.style.setProperty('--c', color);
+    el.style.setProperty('--life', life + 'ms');
+    el._b = { x: x, y: y, w: w, h: h, pts: pts, life: life, born: performance.now(), color: color };
+    el._b.goneT = setTimeout(function () { miss(el); }, life);
+    stage.appendChild(el);
+    st.balloons.push(el);
+  }
+
+  /* ---- Effets ---- */
+  function burst(cx, cy, color, w) {
+    var box = document.createElement('div');
+    box.className = 'burst';
+    box.style.left = cx + 'px';
+    box.style.top = cy + 'px';
+    box.style.setProperty('--c', color);
+    var ring = document.createElement('b');
+    ring.style.setProperty('--rs', String(Math.max(2, (w * 1.3) / 20)));
+    box.appendChild(ring);
+    var n = 10, dist = Math.max(30, w * 0.8);
+    for (var i = 0; i < n; i++) {
+      var a = (Math.PI * 2 * i) / n + Math.random() * 0.4;
+      var d = dist * (0.7 + Math.random() * 0.6);
+      var s = document.createElement('i');
+      s.style.setProperty('--dx', Math.cos(a) * d + 'px');
+      s.style.setProperty('--dy', Math.sin(a) * d + 'px');
+      box.appendChild(s);
+    }
+    stage.appendChild(box);
+    setTimeout(function () { box.remove(); }, 600);
+  }
+  function floatPts(cx, cy, gain) {
+    var t = document.createElement('div');
+    t.className = 'pts';
+    t.textContent = '+' + gain;
+    t.style.left = cx + 'px';
+    t.style.top = cy + 'px';
+    stage.appendChild(t);
+    setTimeout(function () { t.remove(); }, 850);
+  }
+
+  /* ---- Clic réussi / raté ---- */
+  function hit(el) {
+    var b = el._b;
+    removeFrom(el);
+    var remaining = Math.max(0, 1 - (performance.now() - b.born) / b.life);
+    var gain = b.pts + Math.round(10 * remaining);
+    st.score += gain; st.hits++;
+    scoreEl.textContent = st.score;
+    bumpEl(scoreEl);
+    var cx = b.x + b.w / 2, cy = b.y + b.h * 0.45;
+    burst(cx, cy, b.color, b.w);
+    floatPts(cx, cy, gain);
+    pop();
+    el.remove();
+  }
+  function miss(el) {
+    if (!st.running || st.balloons.indexOf(el) < 0) return;
+    removeFrom(el);
+    st.missed++;
+    el.classList.remove('live');
+    el.classList.add('gone');
+    setTimeout(function () { el.remove(); }, 280);
+  }
+
+  stage.addEventListener('pointerdown', function (e) {
+    if (!st.running) return;
+    var el = e.target.closest ? e.target.closest('.balloon.live') : null;
+    if (!el) return;
+    e.preventDefault();
+    hit(el);
+  });
+
+  /* ---- Boucle de jeu ---- */
+  function spawn() {
+    if (!st.running) return;
+    var p = Math.min(1, (performance.now() - st.start) / DURATION);
+    if (st.balloons.length < 9) makeBalloon(p);
+    var next = (720 - 340 * p) * (0.75 + Math.random() * 0.5);
+    st.spawnT = setTimeout(spawn, next);
+  }
+  function tick() {
+    var left = Math.max(0, DURATION - (performance.now() - st.start));
+    timeEl.textContent = (left / 1000).toFixed(1);
+    timeStat.classList.toggle('urgent', left <= 5000);
+    if (left <= 0) end();
+  }
+
+  function clearBalloons() {
+    st.balloons.forEach(function (el) { clearTimeout(el._b.goneT); });
+    st.balloons = [];
+    var leftovers = stage.querySelectorAll('.balloon:not(.static), .burst, .pts');
+    for (var i = 0; i < leftovers.length; i++) leftovers[i].remove();
+  }
+
+  function begin() {
+    initAudio();
+    clearBalloons();
+    st.running = true; st.score = 0; st.hits = 0; st.missed = 0;
+    scoreEl.textContent = '0';
+    timeEl.textContent = (DURATION / 1000).toFixed(1);
+    timeStat.classList.remove('urgent');
+    startOv.hidden = true; endOv.hidden = true;
+    st.start = performance.now();
+    clearInterval(st.tickT);
+    st.tickT = setInterval(tick, 100);
+    st.spawnT = setTimeout(spawn, 350);
+  }
+
+  function end() {
+    st.running = false;
+    clearInterval(st.tickT);
+    clearTimeout(st.spawnT);
+    clearBalloons();
+    timeEl.textContent = '0.0';
+    var total = st.hits + st.missed;
+    var acc = total ? Math.round((st.hits / total) * 100) : 0;
+    var isRecord = st.score > best;
+    if (isRecord) {
+      best = st.score;
+      bestEl.textContent = best;
+      try { localStorage.setItem(BEST_KEY, String(best)); } catch (e) {}
+    }
+    $('finalScore').textContent = st.score;
+    $('rHits').textContent = st.hits;
+    $('rMiss').textContent = st.missed;
+    $('rAcc').textContent = acc + '%';
+    $('recordMsg').hidden = !(isRecord && st.score > 0);
+    if (window.Progress) Progress.finish(1, st.score, $('pgResult'));
+    endOv.hidden = false;
+  }
+
+  if (window.Progress) { Progress.guard(1); Progress.showGoal(1, document.getElementById('goalLine')); }
+  $('playBtn').addEventListener('click', begin);
+  $('againBtn').addEventListener('click', begin);
+})();
+</script>
+
+</body>
+</html>
